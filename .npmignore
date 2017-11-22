@@ -1,0 +1,16 @@
+
+/jsdoc.json
+/.codeclimate.yml
+/.eslintrc.yml
+/.idea/
+/pulchra.iml
+/docs/
+/.gitattributes
+/.npmignore
+/.gitignore
+/.editorconfig
+/.travis.yml
+/yarn-error.log
+/yarn.lock
+/package-lock.json
+/.nvmrc

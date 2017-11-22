@@ -1,0 +1,17 @@
+{
+  "opts": {
+    "destination": "./docs/gen"
+  },
+  "templates": {
+    "systemName": "Pulchra",
+    "footer": "<span style=\"text-align: center; width: 100%; display: block;\"><a href=\"https://github.com/rodrigogs/pulchra\">Github Repository</a></span>",
+    "copyright": "Kairos Copyright (c) 2017 Rodrigo Gomes da Silva. All rights reserved.",
+    "includeDate": "false",
+    "navType": "vertical",
+    "theme": "superhero",
+    "linenums": "false",
+    "collapseSymbols": "true",
+    "outputSourceFiles": "false",
+    "search": "true"
+  }
+}
