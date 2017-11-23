@@ -24,10 +24,10 @@ class Pulchra extends EventEmitter {
    * @param {Number} [options.concurrency = 5] Max concurrent requests.
    * @param {String|Object} [options.storage = os.tmpdir()] Pulchra store path or object.
    * If a path is given, Pulchra will store data using its default behaviour.
-   * @param {Promise.<void>} [options.storage.store] Storage store function.
+   * @param {Function.<void>} [options.storage.store] Storage store function.
    * This function exposes <i>index</i> and <i>url</i> as arguments.
    * This <i>url</i> must be stored somewhere somehow, referenced by its <i>index</i>.
-   * @param {Promise.<String>} [options.storage.retrieve] Storage retrieve function.
+   * @param {Function.<String>} [options.storage.retrieve] Storage retrieve function.
    * This function exposes the <i>index</i> as argument.
    * The function's return should be the <i>url</i> referring to the index.
    *
@@ -57,8 +57,11 @@ class Pulchra extends EventEmitter {
     super();
 
     this._options = options;
+    this._storage = options.storage || require('./storage');
     this._state = CONSTANTS.STATES.STOPPED;
     this._plugins = [];
+    this._currentIndex = 0;
+    this._queue = [];
   }
 
   /**
@@ -115,7 +118,7 @@ class Pulchra extends EventEmitter {
    * The third argument is a function that accepts an string or an string[] as argument. Urls
    * passed to this function will be added to the queue.
    *
-   * @param {Promise.<Boolean|*>} plugin
+   * @param {Function.<Boolean|*>} plugin
    * @return {Pulchra} self
    *
    * @example
