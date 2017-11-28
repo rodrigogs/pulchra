@@ -1,7 +1,7 @@
 const debug = require('debug')('pulchra:Pulchra');
 const os = require('os');
-const { EventEmitter } = require('events');
-const _ = require('lodash');
+
+const Engine = require('./Engine');
 
 const CONSTANTS = {
   STATES: {
@@ -17,19 +17,13 @@ const CONSTANTS = {
   },
 };
 
-class Pulchra extends EventEmitter {
+class Pulchra extends Engine {
   /**
+   * @extends Engine
+   *
    * @param {Object} options Pulchra options object. Options could not be changed later.
    * @param {String} options.target Initial target.
    * @param {Number} [options.concurrency = 5] Max concurrent requests.
-   * @param {String|Object} [options.storage = os.tmpdir()] Pulchra store path or object.
-   * If a path is given, Pulchra will store data using its default behaviour.
-   * @param {Function.<void>} [options.storage.store] Storage store function.
-   * This function exposes <i>index</i> and <i>url</i> as arguments.
-   * This <i>url</i> must be stored somewhere somehow, referenced by its <i>index</i>.
-   * @param {Function.<String>} [options.storage.retrieve] Storage retrieve function.
-   * This function exposes the <i>index</i> as argument.
-   * The function's return should be the <i>url</i> referring to the index.
    *
    * @example
    * const Pulchra = require('pulchra');
@@ -52,16 +46,15 @@ class Pulchra extends EventEmitter {
     concurrency: 5,
     storage: os.tmpdir(),
   }) {
+    debug('instantiating');
+
     if (!options.target) throw new Error('Target must be specified');
 
-    super();
+    super(options);
 
     this._options = options;
-    this._storage = options.storage || require('./storage');
     this._state = CONSTANTS.STATES.STOPPED;
     this._plugins = [];
-    this._currentIndex = 0;
-    this._queue = [];
   }
 
   /**
@@ -109,16 +102,30 @@ class Pulchra extends EventEmitter {
   }
 
   /**
+   * @function Pulchra~pluginAdd
+   * @param {String} url Url to add to queue.
+   */
+
+  /**
+   * @function Pulchra~plugin
+   * @param {Object} response Axios response.
+   * @param {Pulchra~pluginAdd} add Add url function.
+   * @param {String} custom Custom result from the previous plugin.
+   *
+   * @return {Boolean.<false>|Promise.<Boolean.<false>|*>}
+   */
+
+  /**
    * Plugin function works like a middleware to manage returned responses.
-   * This function exposes an <i>axios response</i> argument.
-   * The return of this function will always be passed to the next plugin as the second argument.
+   * This function exposes an <i>axios response</i> as the first argument.
+   * The second argument is a function that accepts an string or an string[] as argument. Urls
+   * passed to this function will be added to the queue.
+   * The return of this function will always be passed to the next plugin as the third argument.
    * If no return is given, next plugin receives the last returned value by a plugin.
    * If a strict <i>false</i> is returned by a plugin,
    * this response's propagation will be immediately stopped.
-   * The third argument is a function that accepts an string or an string[] as argument. Urls
-   * passed to this function will be added to the queue.
    *
-   * @param {Function.<Boolean|*>} plugin
+   * @param {Pulchra~plugin} plugin
    * @return {Pulchra} self
    *
    * @example
@@ -132,7 +139,9 @@ class Pulchra extends EventEmitter {
    *    });
    */
   use(plugin) {
-    if (!_.isFunction(plugin)) throw new Error('Plugin must be a function');
+    debug('adding plugin');
+
+    if (typeof plugin !== 'function') throw new Error('Plugin must be a function');
 
     this._plugins.push(plugin);
     return this;
