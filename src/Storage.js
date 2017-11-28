@@ -1,4 +1,5 @@
 const debug = require('debug')('pulchra:Storage');
+const os = require('os');
 const path = require('path');
 const Datastore = require('nedb');
 
@@ -80,7 +81,7 @@ class Storage extends Base {
    * This function exposes the <i>index</i> as argument.
    * The function's return should be the <i>url</i> referring to the index.
    */
-  constructor(options) {
+  constructor(options = { storage: os.tmpdir() }) {
     debug('instantiating');
 
     super(options);

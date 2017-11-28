@@ -1,21 +1,6 @@
 const debug = require('debug')('pulchra:Pulchra');
-const os = require('os');
 
 const Engine = require('./Engine');
-
-const CONSTANTS = {
-  STATES: {
-    RUNNING: 'running',
-    PAUSED: 'paused',
-    STOPPED: 'stopped',
-  },
-  EVENTS: {
-    START: 'start',
-    PAUSE: 'pause',
-    STOP: 'stop',
-    ERROR: 'error',
-  },
-};
 
 class Pulchra extends Engine {
   /**
@@ -24,6 +9,7 @@ class Pulchra extends Engine {
    * @param {Object} options Pulchra options object. Options could not be changed later.
    * @param {String} options.target Initial target.
    * @param {Number} [options.concurrency = 5] Max concurrent requests.
+   * @param {Number} [options.fromIndex = 0] Index to start from.
    *
    * @example
    * const Pulchra = require('pulchra');
@@ -44,7 +30,7 @@ class Pulchra extends Engine {
   constructor(options = {
     target: null,
     concurrency: 5,
-    storage: os.tmpdir(),
+    fromIndex: 0,
   }) {
     debug('instantiating');
 
@@ -53,7 +39,8 @@ class Pulchra extends Engine {
     super(options);
 
     this._options = options;
-    this._state = CONSTANTS.STATES.STOPPED;
+    this._state = Pulchra.STATES.STOPPED;
+    this._currentIndex = options.fromIndex;
     this._plugins = [];
   }
 
@@ -63,12 +50,12 @@ class Pulchra extends Engine {
   start() {
     debug('starting');
 
-    if (this.state === CONSTANTS.STATES.RUNNING) {
+    if (this.state === Pulchra.STATES.RUNNING) {
       return debug('already running');
     }
 
-    this._state = CONSTANTS.STATES.RUNNING;
-    this.emit(CONSTANTS.EVENTS.START);
+    this._state = Pulchra.STATES.RUNNING;
+    this.emit(Pulchra.EVENTS.START);
   }
 
   /**
@@ -78,12 +65,12 @@ class Pulchra extends Engine {
   pause() {
     debug('pausing');
 
-    if (this.state === CONSTANTS.STATES.PAUSED) {
+    if (this.state === Pulchra.STATES.PAUSED) {
       return debug('already paused');
     }
 
-    this._state = CONSTANTS.STATES.PAUSED;
-    this.emit(CONSTANTS.EVENTS.PAUSE);
+    this._state = Pulchra.STATES.PAUSED;
+    this.emit(Pulchra.EVENTS.PAUSE);
   }
 
   /**
@@ -93,12 +80,12 @@ class Pulchra extends Engine {
   stop() {
     debug('stopping');
 
-    if (this.state === CONSTANTS.STATES.STOPPED) {
+    if (this.state === Pulchra.STATES.STOPPED) {
       return debug('already stopped');
     }
 
-    this._state = CONSTANTS.STOPPED;
-    this.emit(CONSTANTS.EVENTS.STOP);
+    this._state = Pulchra.STOPPED;
+    this.emit(Pulchra.EVENTS.STOP);
   }
 
   /**
@@ -132,7 +119,7 @@ class Pulchra extends Engine {
    *    crawler.use(async (response, custom, add) => {
    *      if (response.status === '200') custom = response.data;
    *    });
-
+   *
    *    crawler.use(async (response, custom, add) => {
    *      const links = findLinks(custom);
    *      links.forEach(add);
@@ -154,33 +141,6 @@ class Pulchra extends Engine {
    */
   get state() {
     return this._state;
-  }
-
-  /**
-   * Returns crawler's options.
-   *
-   * @return {Object}
-   */
-  get options() {
-    return this._options;
-  }
-
-  /**
-   * Pulchra states constant.
-   *
-   * @return {CONSTANTS.STATES|{RUNNING, PAUSED, STOPPED}}
-   */
-  static get STATES() {
-    return CONSTANTS.STATES;
-  }
-
-  /**
-   * Pulchra events constant.
-   *
-   * @return {CONSTANTS.EVENTS|{START, PAUSE, STOP, ERROR}}
-   */
-  static get EVENTS() {
-    return CONSTANTS.EVENTS;
   }
 }
 
