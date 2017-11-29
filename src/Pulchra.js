@@ -1,27 +1,86 @@
 const debug = require('debug')('pulchra:Pulchra');
+const async = require('async');
 
 const Engine = require('./Engine');
 
-const CONSTANTS = {
-  STATES: {
-    RUNNING: 'running',
-    PAUSED: 'paused',
-    STOPPED: 'stopped',
-  },
-  EVENTS: {
-    START: 'start',
-    PAUSE: 'pause',
-    STOP: 'stop',
-    ERROR: 'error',
-    FETCHING: 'fetching',
-    FETCH_SUCCESS: 'fetch_success',
-    FETCH_ERROR: 'fetch_error',
-    FETCHED: 'fetched',
-    URL_STORE_SUCCESS: 'url_store_success',
-    URL_STORE_ERROR: 'url_store_error',
-    URL_RETRIEVE_SUCCESS: 'url_retrieve_success',
-    URL_RETRIEVE_ERROR: 'url_retrieve_error',
-  },
+/**
+ * @param {Number} millis
+ * @private
+ */
+const _wait = (millis = 0) => new Promise((resolve) => {
+  setTimeout(resolve, millis);
+});
+
+/**
+ * @param {Pulchra} instance
+ * @private
+ */
+const _add = instance => (...urls) => {
+  async.eachSeries(urls, async (url) => {
+    try {
+      await instance.store(instance._urlIndex, url);
+      instance._urlIndex += 1;
+    } catch (ignore) {
+      // ignore
+    }
+  });
+};
+
+/**
+ * @param {Pulchra} instance
+ * @param {Object} response
+ * @param {*} custom
+ * @param {Number} [pluginIndex = 0]
+ * @return {Promise}
+ * @private
+ */
+const _pipe = async (instance, response, custom, pluginIndex = 0) => {
+  const plugin = instance._plugins[pluginIndex];
+
+  const result = await plugin(response, _add(instance), custom);
+  if (result === false) return;
+
+  const nextIndex = pluginIndex + 1;
+  if (instance._plugins.length >= nextIndex) {
+    return _pipe(instance, response, result || custom, nextIndex);
+  }
+};
+
+/**
+ * @param {Pulchra} instance
+ * @private
+ */
+const _runner = instance => async (url) => {
+  try {
+    const response = await instance.fetch(url);
+
+    return _pipe(instance, response, undefined, undefined);
+  } catch (err) {
+    debug('an error has occurred', err);
+    instance.emit(instance.constructor.EVENTS.ERROR, err);
+  }
+};
+
+/**
+ * @param {Pulchra} instance
+ * @private
+ */
+const _feed = instance => () => {
+  let ready = true;
+
+  if (instance.state !== instance.constructor.STATES.RUNNING) ready = false;
+  if (instance._queue.length >= instance.options.concurrency) ready = false;
+
+  if (ready) {
+    instance.next().then((next) => {
+      if (next) {
+        instance._queue.push(next);
+        instance._worker.push(next);
+      }
+    });
+  }
+
+  _wait(100).then(_feed(instance));
 };
 
 class Pulchra extends Engine {
@@ -32,6 +91,15 @@ class Pulchra extends Engine {
    * @param {String} options.target Initial target.
    * @param {Number} [options.concurrency = 5] Max concurrent requests.
    * @param {Number} [options.fromIndex = 0] Index to start from.
+   * @param {Object} [options.request] <a href="https://github.com/axios/axios#axioscreateconfig">Axios create config</a>
+   * @param {String|Object} [options.storage = os.tmpdir()] Pulchra store path or object.
+   * If a path is given, Pulchra will store data using its default behaviour.
+   * @param {Storage~store} [options.storage.store] Storage store function.
+   * This function exposes <i>index</i> and <i>url</i> as arguments.
+   * This <i>url</i> must be stored somewhere somehow, referenced by its <i>index</i>.
+   * @param {Storage~retrieve} [options.storage.retrieve] Storage retrieve function.
+   * This function exposes the <i>index</i> as argument.
+   * The function's return should be the <i>url</i> referring to the index.
    *
    * @example
    * const Pulchra = require('pulchra');
@@ -65,6 +133,13 @@ class Pulchra extends Engine {
     this._options = options;
     this._state = Pulchra.STATES.STOPPED;
     this._plugins = [];
+    this._urlIndex = options.fromIndex;
+    this._storageIndex = options.fromIndex;
+    this._worker = async.queue(_runner(this));
+    this._queue = [];
+    this._started = false;
+
+    this._worker.push(options.target);
   }
 
   /**
@@ -79,6 +154,11 @@ class Pulchra extends Engine {
 
     this._state = Pulchra.STATES.RUNNING;
     this.emit(Pulchra.EVENTS.START);
+
+    if (!this._started) {
+      _feed(this)();
+      this._started = true;
+    }
   }
 
   /**
@@ -108,6 +188,7 @@ class Pulchra extends Engine {
     }
 
     this._urlIndex = this.options.fromIndex;
+    this._storageIndex = this.options.fromIndex;
 
     this._state = Pulchra.STOPPED;
     this.emit(Pulchra.EVENTS.STOP);
@@ -176,26 +257,6 @@ class Pulchra extends Engine {
    */
   get options() {
     return this._options;
-  }
-
-  /**
-   * States constant.
-   *
-   * @return {CONSTANTS.STATES|{RUNNING, PAUSED, STOPPED}}
-   * @constructor
-   */
-  static get STATES() {
-    return CONSTANTS.STATES;
-  }
-
-  /**
-   * Events constant.
-   * @return {CONSTANTS.EVENTS|{START, PAUSE, STOP, ERROR, FETCHING, FETCH_SUCCESS, FETCH_ERROR,
-   * FETCHED, URL_STORE_SUCCESS, URL_STORE_ERROR, URL_RETRIEVE_SUCCESS, URL_RETRIEVE_ERROR}}
-   * @constructor
-   */
-  static get EVENTS() {
-    return CONSTANTS.EVENTS;
   }
 }
 

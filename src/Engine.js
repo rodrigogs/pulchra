@@ -1,75 +1,7 @@
 const debug = require('debug')('pulchra:Engine');
 const axios = require('axios');
-const async = require('async');
 
 const Storage = require('./Storage');
-
-/**
- * @param {Pulchra} instance
- * @private
- */
-const _add = instance => (...urls) => {
-  async.eachSeries(urls, async (url) => {
-    try {
-      await instance.store(instance._urlIndex, url);
-      instance._urlIndex += 1;
-    } catch (ignore) {
-      // ignore
-    }
-  });
-};
-
-/**
- * @param {Pulchra} instance
- * @param {Object} response
- * @param {*} custom
- * @param {Number} [pluginIndex = 0]
- * @return {Promise}
- * @private
- */
-const _pipe = async (instance, response, custom, pluginIndex = 0) => {
-  const plugin = instance._plugins[pluginIndex];
-
-  const result = await plugin(response, _add(instance), custom);
-  if (result === false) return;
-
-  const nextIndex = pluginIndex + 1;
-  if (instance._plugins.length >= nextIndex) {
-    return _pipe(instance, response, result || custom, nextIndex);
-  }
-};
-
-/**
- * @param {Pulchra} instance
- * @private
- */
-const _runner = instance => async (url) => {
-  try {
-    const response = await instance.fetch(url);
-
-    return _pipe(instance, response, undefined, undefined);
-  } catch (err) {
-    debug('an error has occurred', err);
-    instance.emit(instance.EVENTS.ERROR, err);
-  }
-};
-
-/**
- * @param {Pulchra} instance
- * @private
- */
-const _feed = instance => () => {
-  if (instance.state !== instance.STATES.RUNNING) return _feed(instance)();
-  if (instance._queue.length >= instance._concurrency) return _feed(instance)();
-
-  const next = instance.next();
-  if (next) {
-    instance._queue.push(next);
-    instance._worker.push(next);
-  }
-
-  _feed(instance)();
-};
 
 class Engine extends Storage {
   /**
@@ -88,14 +20,7 @@ class Engine extends Storage {
     super(options);
 
     this._request = axios.create(options.request);
-    this._urlIndex = options.fromIndex;
     this._storageIndex = options.fromIndex;
-    this._worker = async.queue(_runner(this));
-    this._queue = [];
-
-    this._worker.push(this._options.target);
-
-    _feed(this)();
   }
 
   /**
