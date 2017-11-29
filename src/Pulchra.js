@@ -1,41 +1,6 @@
 const debug = require('debug')('pulchra:Pulchra');
-const async = require('async');
 
 const Engine = require('./Engine');
-
-const _add = instance => (...urls) => {
-  async.eachSeries(urls, async (url) => {
-    instance.store(instance._currentTndex, url);
-    instance._currentTndex += 1;
-  });
-};
-
-const _pipe = instance => response => custom => async (index = 0) => {
-  const plugin = instance._plugins[index];
-
-  const result = await plugin(response, _add(instance), custom);
-  if (result === false) return;
-
-  const nextIndex = index + 1;
-  if (instance._plugins.length >= nextIndex) {
-    return _pipe(instance)(response)(result || custom)(nextIndex);
-  }
-};
-
-/**
- * @param {Pulchra} instance
- * @private
- */
-const _run = instance => async (url) => {
-  try {
-    const response = await instance.fetch(url);
-
-    return _pipe(instance)(response)()();
-  } catch (err) {
-    debug('an error has occurred', err);
-    instance.emit(instance.EVENTS.ERROR, err);
-  }
-};
 
 class Pulchra extends Engine {
   /**
@@ -78,8 +43,6 @@ class Pulchra extends Engine {
     this._options = options;
     this._state = Pulchra.STATES.STOPPED;
     this._plugins = [];
-    this._currentTndex = options.fromIndex;
-    this._queueSize = 0;
   }
 
   /**
@@ -92,57 +55,9 @@ class Pulchra extends Engine {
       return debug('already running');
     }
 
-    if (!this._queue) {
-      this._queue = async.queue(_run(this));
-      this._queue.push(this._options.target);
-    }
-
     this._state = Pulchra.STATES.RUNNING;
     this.emit(Pulchra.EVENTS.START);
-
-    const incrementQueue = () => {
-      if (this._queueSize < this.options.concurrency) {
-        this._queueSize += 1;
-
-        this.next()
-          .then((url) => {
-            if (!url) {
-              this._queueSize -= 1;
-              return;
-            }
-            this._queue.push(url);
-          })
-          .catch(() => {
-            this._queueSize -= 1;
-          });
-      }
-    };
-
-    let syncInterval;
-
-    const bindEvents = () => {
-      syncInterval = setInterval(incrementQueue, 5000);
-
-      this.on(Pulchra.EVENTS.FETCHED, () => {
-        this._queueSize -= 1;
-        incrementQueue();
-      });
-
-      this.on(Pulchra.EVENTS.URL_STORE_SUCCESS, incrementQueue);
-    };
-
-    const unbindEvents = () => {
-      this.off(Pulchra.EVENTS.FETCHED);
-      this.off(Pulchra.EVENTS.URL_STORE_SUCCESS);
-      clearInterval(syncInterval);
-    };
-
-    this.once(Pulchra.EVENTS.STOP, unbindEvents);
-    this.once(Pulchra.EVENTS.PAUSE, unbindEvents);
-
-    bindEvents();
   }
-
 
   /**
    * Pauses the crawler.
@@ -170,10 +85,7 @@ class Pulchra extends Engine {
       return debug('already stopped');
     }
 
-    this._queue = null;
-    this._queueSize = 0;
-    this._currentTndex = this.options.fromIndex;
-    this._storageIndex = this.options.fromIndex;
+    this._urlIndex = this.options.fromIndex;
 
     this._state = Pulchra.STOPPED;
     this.emit(Pulchra.EVENTS.STOP);
