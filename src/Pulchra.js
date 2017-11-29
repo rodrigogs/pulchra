@@ -58,6 +58,9 @@ const _runner = instance => async (url) => {
   } catch (err) {
     debug('an error has occurred', err);
     instance.emit(instance.constructor.EVENTS.ERROR, err);
+  } finally {
+    const index = instance._queue.indexOf(url);
+    if (index > -1) instance._queue.splice(index, 1);
   }
 };
 
