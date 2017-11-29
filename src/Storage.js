@@ -18,7 +18,18 @@ const _retrieve = db => index => new Promise((resolve, reject) => {
   debug('retrieving data with default retrieve function for index', index);
 
   db.findOne({ index }, (err, doc) => {
-    if (err) return reject(err);
+    if (err) {
+      debug('error retrieving url', index, err);
+      return reject(err);
+    }
+
+    if (!doc) return resolve(null);
+
+    db.remove({ index }, (err) => {
+      if (err) return debug('error removing url from the storage', index, err);
+      debug('url removed', index);
+    });
+
     resolve(doc.url);
   });
 });
@@ -81,8 +92,12 @@ class Storage extends Base {
    * This function exposes the <i>index</i> as argument.
    * The function's return should be the <i>url</i> referring to the index.
    */
-  constructor(options = { storage: os.tmpdir() }) {
+  constructor(options) {
     debug('instantiating');
+
+    options = Object.assign({
+      storage: os.tmpdir(),
+    }, options);
 
     super(options);
 
@@ -102,7 +117,13 @@ class Storage extends Base {
   async store(index, url) {
     debug('calling store function with index', index, 'and url', url);
 
-    return this._store(index, url);
+    try {
+      await this._store(index, url);
+      this.emit(Storage.EVENTS.URL_STORE_SUCCESS, url);
+    } catch (err) {
+      debug('error storing url', url, err);
+      this.emit(Storage.EVENTS.URL_STORE_ERROR, err);
+    }
   }
 
   /**
@@ -114,7 +135,14 @@ class Storage extends Base {
   async retrieve(index) {
     debug('calling retrieve function with index', index);
 
-    return this._retrieve(index);
+    try {
+      const url = await this._retrieve(index);
+      this.emit(Storage.EVENTS.URL_RETRIEVE_SUCCESS, url);
+      return url;
+    } catch (err) {
+      debug('error retrieving url', index, err);
+      this.emit(Storage.EVENTS.URL_RETRIEVE_ERROR, err);
+    }
   }
 }
 
