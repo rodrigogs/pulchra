@@ -16,11 +16,14 @@ const _wait = (millis = 0) => new Promise((resolve) => {
  * @private
  */
 const _addUrl = instance => async (url) => {
+  debug('adding url', url);
+
   try {
     await instance.store(instance._urlIndex, url);
+    debug('url added', url);
     instance._urlIndex += 1;
-  } catch (ignore) {
-    // ignore
+  } catch (err) {
+    debug('error adding url', url, err.message);
   }
 };
 
@@ -36,8 +39,19 @@ const _pipe = async (instance, response, custom, pluginIndex = 0) => {
   const plugin = instance._plugins[pluginIndex];
   if (!plugin) return;
 
+  const addFn = (url, cb) => {
+    if (instance._addQueueSize > 100 && !instance._waitForAddQueueToDrain) {
+      debug('add queue size reached more than 100 urls, queue will be drained before continue');
+      instance._waitForAddQueueToDrain = true;
+    }
+
+    instance._addQueueSize += 1;
+    instance._addQueueDrained = false;
+    return instance._addQueue.push(url, cb);
+  };
+
   try {
-    const result = await plugin(response, instance._addQueue.push, custom);
+    const result = await plugin(response, addFn, custom);
     if (result === false) return;
 
     const nextIndex = pluginIndex + 1;
@@ -56,6 +70,7 @@ const _pipe = async (instance, response, custom, pluginIndex = 0) => {
  */
 const _runner = instance => async (url) => {
   try {
+    this._addQueueSize -= 1;
     const response = await instance.fetch(url);
     if (response) await _pipe(instance, response, undefined, undefined);
   } catch (err) {
@@ -78,6 +93,7 @@ const _feed = instance => () => {
 
   if (instance.state !== instance.constructor.STATES.RUNNING) ready = false;
   if (instance._queue.length >= instance.options.concurrency) ready = false;
+  if (instance._waitForAddQueueToDrain) ready = false;
 
   if (ready) {
     instance.next().then((next) => {
@@ -145,6 +161,11 @@ class Pulchra extends Engine {
     this._storageIndex = options.fromIndex;
     this._queue = [];
     this._started = false;
+    this._worker = null;
+    this._addQueue = null;
+    this._addQueueSize = 0;
+    this._waitForAddQueueToDrain = false;
+    this._addQueueDrained = true;
   }
 
   /**
@@ -164,7 +185,14 @@ class Pulchra extends Engine {
         await _addUrl(this)(this._options.target);
 
         this._worker = async.queue(_runner(this), this._options.concurrency);
-        this._addQueue = async.queue(_addUrl(this));
+        this._addQueue = async.queue(_addUrl(this), 1);
+        this._addQueueSize = 0;
+        this._waitForAddQueueToDrain = false;
+
+        this._addQueue.drain = () => {
+          debug('add queue drained');
+          this._waitForAddQueueToDrain = false;
+        };
 
         this._started = true;
       } catch (err) {
