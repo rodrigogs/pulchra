@@ -15,15 +15,13 @@ const _wait = (millis = 0) => new Promise((resolve) => {
  * @param {Pulchra} instance
  * @private
  */
-const _add = instance => (...urls) => {
-  async.eachSeries(urls, async (url) => {
-    try {
-      await instance.store(instance._urlIndex, url);
-      instance._urlIndex += 1;
-    } catch (ignore) {
-      // ignore
-    }
-  });
+const _addUrl = instance => async (url) => {
+  try {
+    await instance.store(instance._urlIndex, url);
+    instance._urlIndex += 1;
+  } catch (ignore) {
+    // ignore
+  }
 };
 
 /**
@@ -36,13 +34,19 @@ const _add = instance => (...urls) => {
  */
 const _pipe = async (instance, response, custom, pluginIndex = 0) => {
   const plugin = instance._plugins[pluginIndex];
+  if (!plugin) return;
 
-  const result = await plugin(response, _add(instance), custom);
-  if (result === false) return;
+  try {
+    const result = await plugin(response, instance._addQueue.push, custom);
+    if (result === false) return;
 
-  const nextIndex = pluginIndex + 1;
-  if (instance._plugins.length >= nextIndex) {
-    return _pipe(instance, response, result || custom, nextIndex);
+    const nextIndex = pluginIndex + 1;
+    if (instance._plugins.length >= nextIndex) {
+      return _pipe(instance, response, result || custom, nextIndex);
+    }
+  } catch (err) {
+    debug('an error occurred on plugin', pluginIndex, err.message);
+    throw err;
   }
 };
 
@@ -53,11 +57,12 @@ const _pipe = async (instance, response, custom, pluginIndex = 0) => {
 const _runner = instance => async (url) => {
   try {
     const response = await instance.fetch(url);
-
-    return _pipe(instance, response, undefined, undefined);
+    if (response) await _pipe(instance, response, undefined, undefined);
   } catch (err) {
-    debug('an error has occurred', err);
+    debug('an error has occurred', err.message);
     instance.emit(instance.constructor.EVENTS.ERROR, err);
+
+    if (err.response) await _pipe(instance, err.response, undefined, undefined);
   } finally {
     const index = instance._queue.indexOf(url);
     if (index > -1) instance._queue.splice(index, 1);
@@ -138,30 +143,38 @@ class Pulchra extends Engine {
     this._plugins = [];
     this._urlIndex = options.fromIndex;
     this._storageIndex = options.fromIndex;
-    this._worker = async.queue(_runner(this));
     this._queue = [];
     this._started = false;
-
-    this._worker.push(options.target);
   }
 
   /**
    * Starts the crawler.
    */
-  start() {
+  async start() {
     debug('starting');
 
     if (this.state === Pulchra.STATES.RUNNING) {
       return debug('already running');
     }
 
-    this._state = Pulchra.STATES.RUNNING;
-    this.emit(Pulchra.EVENTS.START);
-
     if (!this._started) {
       _feed(this)();
-      this._started = true;
+
+      try {
+        await _addUrl(this)(this._options.target);
+
+        this._worker = async.queue(_runner(this), this._options.concurrency);
+        this._addQueue = async.queue(_addUrl(this));
+
+        this._started = true;
+      } catch (err) {
+        this.stop();
+        throw new Error('Could not start the instance due to an error', err);
+      }
     }
+
+    this._state = Pulchra.STATES.RUNNING;
+    this.emit(Pulchra.EVENTS.START);
   }
 
   /**
@@ -192,6 +205,9 @@ class Pulchra extends Engine {
 
     this._urlIndex = this.options.fromIndex;
     this._storageIndex = this.options.fromIndex;
+    this._worker = null;
+    this._addQueue = null;
+    this._started = false;
 
     this._state = Pulchra.STOPPED;
     this.emit(Pulchra.EVENTS.STOP);

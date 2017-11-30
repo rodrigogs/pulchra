@@ -52,6 +52,8 @@ class Engine extends Storage {
    */
   async next() {
     try {
+      if (this._storageIndex > this._urlIndex) return null;
+
       const url = await this.retrieve(this._storageIndex);
       if (!url) return null;
 
